@@ -59,7 +59,7 @@ def main():
 
                 ear_left = get_ear(left_eye)
                 ear_right = get_ear(right_eye)
-
+                print(round(ear_left,2), round(ear_right,2))
                 closed = ear_left < 0.2 and ear_right < 0.2
 
                 if (closed):
