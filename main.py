@@ -5,7 +5,7 @@ import time
 from scipy.spatial import distance as dist
 import os
 
-#   fast1. Process each video frame at 1/4 resolution (though still display it at full resolution)
+#   fast1. Process each video frame at 1/5 resolution (though still display it at full resolution)
 #   fast2. Only detect faces in every other frame of video.
 
 video_capture = cv2.VideoCapture(0)  # get video from default webcam
@@ -20,6 +20,7 @@ def include_faces():
             image_face = face_recognition.face_encodings(image)[0]
             known_face_encodings.append(image_face)  # known_face_encodings
             known_face_names.append(os.path.splitext(filename)[0])  # known_face_names
+            # os.remove(filepath)
     return known_face_encodings, known_face_names
 
 def find_main_face(faces_locations):
@@ -39,11 +40,13 @@ def main():
     face_locations, face_encodings, face_names = [], [], []
     process_this_frame = True
     known_face_encodings, known_face_names = include_faces()
+
+    count_total, count_known, count_unknown = 0, 0, 0
     wink_time = 0
 
     while True:
         ret, frame = video_capture.read()
-        small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)  #   fast1
+        small_frame = cv2.resize(frame, (0, 0), fx=0.2, fy=0.2)  #   fast1
         rgb_small_frame = small_frame[:, :, ::-1]  # BGR (OpenCV) to RGB (face_recognition uses)
 
         if process_this_frame:  #   fast2
@@ -68,6 +71,9 @@ def main():
             main_face_idx = find_main_face(face_locations)
             if main_face_idx >= 0:
                 face_landmark = face_landmarks_list[main_face_idx]
+                face_location = face_locations[main_face_idx]
+                if abs((face_location[0]-face_location[2])*(face_location[1]-face_location[3])) > 3844:
+                    count_total += 1
                 left_eye, right_eye = face_landmark['left_eye'], face_landmark['right_eye']
                 ear_left, ear_right = get_ear(left_eye), get_ear(right_eye)
                 if (ear_left < 0.19 and ear_right > 0.2) or (ear_left > 0.2 and ear_right < 0.19):
@@ -84,10 +90,10 @@ def main():
         process_this_frame = not process_this_frame
 
         for (top, right, bottom, left), name in zip(face_locations, face_names):  # Display in video
-            top *= 4
-            right *= 4
-            bottom *= 4
-            left *= 4
+            top *= 5
+            right *= 5
+            bottom *= 5
+            left *= 5
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)  # box around faces
             cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)  # label below faces
             font = cv2.FONT_HERSHEY_DUPLEX
