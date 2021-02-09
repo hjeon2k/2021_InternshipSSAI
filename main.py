@@ -1,9 +1,11 @@
 import face_recognition
 import cv2
 import numpy as np
-import time
 from scipy.spatial import distance as dist
 import os
+import schedule
+from datetime import datetime
+import time
 
 #   fast1. Process each video frame at 1/5 resolution (though still display it at full resolution)
 #   fast2. Only detect faces in every other frame of video.
@@ -33,15 +35,24 @@ def find_main_face(faces_locations):
         if area > max_area:
             main_face_idx = i
             max_area = area
+    if max_area < 1200:
+        return -1
     return main_face_idx
+
+def get_ear(eye):
+    A = dist.euclidean(eye[1], eye[5])
+    B = dist.euclidean(eye[2], eye[4])
+    C = dist.euclidean(eye[0], eye[3])
+    ear = (A + B) / (2.0 * C)
+    return ear
+
 
 WINK_TIME_LIMIT = 3
 def main():
-    face_locations, face_encodings, face_names = [], [], []
     process_this_frame = True
+    face_locations, face_names = [], []
     known_face_encodings, known_face_names = include_faces()
-
-    count_total, count_known, count_unknown = 0, 0, 0
+    unknown_face_encodings = []
     wink_time = 0
 
     while True:
@@ -54,65 +65,87 @@ def main():
             face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
             face_landmarks_list = face_recognition.face_landmarks(rgb_small_frame)
             face_names = []
-            for face_encoding in face_encodings:
-                matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
-                name = "Unknown"
-                '''
-                if True in matches:  # find correct face
-                    first_match_index = matches.index(True)
-                    name = known_face_names[first_match_index]
-                '''
-                face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
-                best_match_index = np.argmin(face_distances)  # use best matching face
-                if matches[best_match_index]:
-                    name = known_face_names[best_match_index]
-                face_names.append(name)
-
             main_face_idx = find_main_face(face_locations)
-            if main_face_idx >= 0:
-                face_landmark = face_landmarks_list[main_face_idx]
-                face_location = face_locations[main_face_idx]
-                if abs((face_location[0]-face_location[2])*(face_location[1]-face_location[3])) > 3844:
-                    count_total += 1
-                left_eye, right_eye = face_landmark['left_eye'], face_landmark['right_eye']
-                ear_left, ear_right = get_ear(left_eye), get_ear(right_eye)
-                if (ear_left < 0.19 and ear_right > 0.2) or (ear_left > 0.2 and ear_right < 0.19):
-                    wink_time += 1
+            for i in range(len(face_locations)):
+                if abs((face_locations[i][0]-face_locations[i][2])*(face_locations[i][1]-face_locations[i][3])) < 1200:
+                    face_names.append("_")
+                    continue
+                face_encoding = face_encodings[i]
+                known_face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+                known_best_match_index = np.argmin(known_face_distances)  # use best matching known face
+                known_best_match_distance = known_face_distances[known_best_match_index]
+                if known_best_match_distance < 0.3:
+                    face_names.append(known_face_names[known_best_match_index])
+                    known_face_encodings[known_best_match_index] = (known_face_encodings[known_best_match_index] + face_encoding) / 2
+
+                elif len(unknown_face_encodings):
+                    unknown_face_distances = face_recognition.face_distance(unknown_face_encodings, face_encoding)
+                    unknown_best_match_index = np.argmin(unknown_face_distances)  # use best matching unknown face
+                    unknown_best_match_distance = unknown_face_distances[unknown_best_match_index]
+                    if unknown_best_match_distance < 0.3:
+                        face_names.append("Unknown")
+                        unknown_face_encodings[unknown_best_match_index] = (unknown_face_encodings[unknown_best_match_index] + face_encoding) / 2
+                    else:
+                        face_names.append("Unknown")
+                        unknown_face_encodings.append(face_encoding)
                 else:
-                    wink_time = 0
-                if wink_time >= WINK_TIME_LIMIT and face_names[main_face_idx] == "Unknown":
-                    known_face_encodings.append(face_encodings[main_face_idx])
-                    reg_face_name = input("Please enter your name to register")
-                    known_face_names.append(reg_face_name)
-                    print("Registered as " + reg_face_name)
-                    wink_time = 0
+                    face_names.append("Unknown")
+                    unknown_face_encodings.append(face_encoding)
+                if i == main_face_idx:
+                    face_landmark = face_landmarks_list[i]
+                    left_eye, right_eye = face_landmark['left_eye'], face_landmark['right_eye']
+                    ear_left, ear_right = get_ear(left_eye), get_ear(right_eye)
+                    if (ear_left < 0.19 and ear_right > 0.2) or (ear_left > 0.2 and ear_right < 0.19):
+                        wink_time += 1
+                    else:
+                        wink_time = 0
+                    if wink_time >= WINK_TIME_LIMIT or (cv2.waitKey(1) & 0xFF == ord('s')):
+                        reg_face_name = input("Please enter your name to register")
+                        print("Registered as " + reg_face_name)
+                        if face_names[i] != "Unknown":
+                            face_names[i] = reg_face_name
+                            
+                        elif len(unknown_face_encodings) and unknown_best_match_distance < 0.3:
+                            unknown_face_encodings.pop(i)
+                            known_face_encodings.append(face_encodings[i])
+                            known_face_names.append(reg_face_name)
+                        wink_time = 0
 
         process_this_frame = not process_this_frame
 
-        for (top, right, bottom, left), name in zip(face_locations, face_names):  # Display in video
+        for i in range(len(face_names)):  # Display in video
+            print(i, len(face_locations), len(face_names))
+            name = face_names[i]
+            top, right, bottom, left = face_locations[i]
+            if abs((top-bottom)*(left-right)) < 1200:
+                continue
             top *= 5
             right *= 5
             bottom *= 5
             left *= 5
-            cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)  # box around faces
-            cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)  # label below faces
+            if i == main_face_idx:
+                cv2.rectangle(frame, (left, top + 35), (right, bottom), (0, 255, 0), 2)
+                cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 255, 0), cv2.FILLED)
+            else:
+                cv2.rectangle(frame, (left, top + 35), (right, bottom), (0, 0, 255), 2)
+                cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
             font = cv2.FONT_HERSHEY_DUPLEX
             cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
         cv2.imshow('Video', frame)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):  # q to quit
+        if cv2.waitKey(1) & 0xFF == ord('q') or datetime.now().hour == 20:  # q to quit
+            print(len(known_face_encodings))
+            print(len(unknown_face_encodings))
             break
 
     video_capture.release()  # release webcam handling
     cv2.destroyAllWindows()
 
 
-def get_ear(eye):
-    A = dist.euclidean(eye[1], eye[5])
-    B = dist.euclidean(eye[2], eye[4])
-    C = dist.euclidean(eye[0], eye[3])
-    ear = (A + B) / (2.0 * C)
-    return ear
-
-if __name__ == "__main__":
-    main()
+schedule.every().day.at("08:00").do(main)
+'''
+while True:
+    schedule.run_pending()
+    time.sleep(1)
+'''
+main()
