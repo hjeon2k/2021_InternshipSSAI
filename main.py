@@ -1,28 +1,35 @@
 import face_recognition
 import cv2
-import numpy as np
 from scipy.spatial import distance as dist
+import numpy as np
 import os
 import schedule
 from datetime import datetime
 import time
+import csv
 
 #   fast1. Process each video frame at 1/5 resolution (though still display it at full resolution)
 #   fast2. Only detect faces in every other frame of video.
 
 video_capture = cv2.VideoCapture(0)  # get video from default webcam
 
-IMAGE_FILE = 'images/'
+FACE_DATA = "face_data/"
 def include_faces():
     known_face_encodings, known_face_names = [], []
-    for filename in os.listdir(IMAGE_FILE):
+    for filename in os.listdir(FACE_DATA):
         if os.path.splitext(filename)[1].lower() in ['.jpg','.jpeg','.png']:
-            filepath = IMAGE_FILE + filename
+            filepath = FACE_DATA + filename
             image = face_recognition.load_image_file(filepath)
             image_face = face_recognition.face_encodings(image)[0]
             known_face_encodings.append(image_face)  # known_face_encodings
             known_face_names.append(os.path.splitext(filename)[0])  # known_face_names
-            # os.remove(filepath)
+            os.remove(filepath)
+    if os.path.isfile(FACE_DATA + "face_encodings.csv"):
+        with open(FACE_DATA + "face_encodings.csv", 'r') as f:
+            frd = csv.reader(f)
+            for line in frd:
+                known_face_encodings.append(np.array(line[1:]).astype('float'))
+                known_face_names.append(line[0])
     return known_face_encodings, known_face_names
 
 def find_main_face(faces_locations):
@@ -47,13 +54,12 @@ def get_ear(eye):
     return ear
 
 
-WINK_TIME_LIMIT = 3
 def main():
     process_this_frame = True
     face_locations, face_names = [], []
     known_face_encodings, known_face_names = include_faces()
     unknown_face_encodings = []
-    wink_time = 0
+    visit = []
 
     while True:
         ret, frame = video_capture.read()
@@ -63,7 +69,6 @@ def main():
         if process_this_frame:  #   fast2
             face_locations = face_recognition.face_locations(rgb_small_frame)
             face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
-            face_landmarks_list = face_recognition.face_landmarks(rgb_small_frame)
             face_names = []
             main_face_idx = find_main_face(face_locations)
             for i in range(len(face_locations)):
@@ -92,29 +97,20 @@ def main():
                     face_names.append("Unknown")
                     unknown_face_encodings.append(face_encoding)
                 if i == main_face_idx:
-                    face_landmark = face_landmarks_list[i]
-                    left_eye, right_eye = face_landmark['left_eye'], face_landmark['right_eye']
-                    ear_left, ear_right = get_ear(left_eye), get_ear(right_eye)
-                    if (ear_left < 0.19 and ear_right > 0.2) or (ear_left > 0.2 and ear_right < 0.19):
-                        wink_time += 1
-                    else:
-                        wink_time = 0
-                    if wink_time >= WINK_TIME_LIMIT or (cv2.waitKey(1) & 0xFF == ord('s')):
+                    if cv2.waitKey(1) & 0xFF == ord('s'):
                         reg_face_name = input("Please enter your name to register")
                         print("Registered as " + reg_face_name)
                         if face_names[i] != "Unknown":
                             face_names[i] = reg_face_name
-                            
+                            known_face_names[known_best_match_index] = reg_face_name
                         elif len(unknown_face_encodings) and unknown_best_match_distance < 0.3:
                             unknown_face_encodings.pop(i)
                             known_face_encodings.append(face_encodings[i])
                             known_face_names.append(reg_face_name)
-                        wink_time = 0
 
         process_this_frame = not process_this_frame
 
         for i in range(len(face_names)):  # Display in video
-            print(i, len(face_locations), len(face_names))
             name = face_names[i]
             top, right, bottom, left = face_locations[i]
             if abs((top-bottom)*(left-right)) < 1200:
@@ -124,18 +120,19 @@ def main():
             bottom *= 5
             left *= 5
             if i == main_face_idx:
-                cv2.rectangle(frame, (left, top + 35), (right, bottom), (0, 255, 0), 2)
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
                 cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 255, 0), cv2.FILLED)
             else:
-                cv2.rectangle(frame, (left, top + 35), (right, bottom), (0, 0, 255), 2)
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
                 cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
             font = cv2.FONT_HERSHEY_DUPLEX
             cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
         cv2.imshow('Video', frame)
 
-        if cv2.waitKey(1) & 0xFF == ord('q') or datetime.now().hour == 20:  # q to quit
-            print(len(known_face_encodings))
-            print(len(unknown_face_encodings))
+        if cv2.waitKey(1) & 0xFF == ord('q') or datetime.now().hour == 19:  # q to quit
+            with open(FACE_DATA + "face_encodings.csv", 'w', newline='') as f:
+                fwr = csv.writer(f, delimiter=',')
+                fwr.writerows(np.concatenate((np.array(known_face_names).reshape(len(known_face_names), 1), known_face_encodings), axis=1))
             break
 
     video_capture.release()  # release webcam handling
