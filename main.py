@@ -4,9 +4,9 @@ from scipy.spatial import distance as dist
 import numpy as np
 import os
 import schedule
-from datetime import datetime
 import time
 import csv
+from datetime import datetime
 
 #   fast1. Process each video frame at 1/5 resolution (though still display it at full resolution)
 #   fast2. Only detect faces in every other frame of video.
@@ -58,18 +58,26 @@ def main():
     process_this_frame = True
     face_locations, face_names = [], []
     known_face_encodings, known_face_names = include_faces()
-    unknown_face_encodings = []
-    visit = []
-
+    known_face_pass, known_face_inframe = [[] for i in range(len(known_face_encodings))], [[0,0,0,0,0,0,0,0,0,0] for i in range(len(known_face_encodings))]
+    unknown_face_encodings, unknown_face_pass, unknown_face_inframe = [], [], []
+    fn = 0
+    hour = datetime.now().hour
+    with open("pass.csv", "a", newline='\n') as fp:
+        wr = csv.writer(fp, delimiter=',')
+        wr.writerow(["year", "month", "day", "hour", "known_ppl", "unknown_ppl", "known_pass", "unknown_pass"])
     while True:
         ret, frame = video_capture.read()
         small_frame = cv2.resize(frame, (0, 0), fx=0.2, fy=0.2)  #   fast1
         rgb_small_frame = small_frame[:, :, ::-1]  # BGR (OpenCV) to RGB (face_recognition uses)
-
         if process_this_frame:  #   fast2
             face_locations = face_recognition.face_locations(rgb_small_frame)
             face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
             face_names = []
+            for i in range(len(known_face_inframe)):
+                known_face_inframe[i][fn] = 0
+            if len(unknown_face_encodings):
+                for i in range(len(unknown_face_inframe)):
+                    unknown_face_inframe[i][fn] = 0
             main_face_idx = find_main_face(face_locations)
             for i in range(len(face_locations)):
                 if abs((face_locations[i][0]-face_locations[i][2])*(face_locations[i][1]-face_locations[i][3])) < 1200:
@@ -79,23 +87,36 @@ def main():
                 known_face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
                 known_best_match_index = np.argmin(known_face_distances)  # use best matching known face
                 known_best_match_distance = known_face_distances[known_best_match_index]
-                if known_best_match_distance < 0.3:
+                if known_best_match_distance < 0.35:
                     face_names.append(known_face_names[known_best_match_index])
                     known_face_encodings[known_best_match_index] = (known_face_encodings[known_best_match_index] + face_encoding) / 2
+                    if abs((face_locations[i][0] - face_locations[i][2]) * (face_locations[i][1] - face_locations[i][3])) > 3600:
+                        known_face_inframe[known_best_match_index][fn] = 1
 
                 elif len(unknown_face_encodings):
                     unknown_face_distances = face_recognition.face_distance(unknown_face_encodings, face_encoding)
                     unknown_best_match_index = np.argmin(unknown_face_distances)  # use best matching unknown face
                     unknown_best_match_distance = unknown_face_distances[unknown_best_match_index]
-                    if unknown_best_match_distance < 0.3:
+                    if unknown_best_match_distance < 0.35:
                         face_names.append("Unknown")
                         unknown_face_encodings[unknown_best_match_index] = (unknown_face_encodings[unknown_best_match_index] + face_encoding) / 2
+                        if abs((face_locations[i][0] - face_locations[i][2]) * (face_locations[i][1] - face_locations[i][3])) > 3600:
+                            unknown_face_inframe[unknown_best_match_index][fn] = 1
                     else:
                         face_names.append("Unknown")
                         unknown_face_encodings.append(face_encoding)
+                        unknown_face_inframe.append([0,0,0,0,0,0,0,0,0,0])
+                        unknown_face_pass.append([])
+                        if abs((face_locations[i][0] - face_locations[i][2]) * (face_locations[i][1] - face_locations[i][3])) > 3600:
+                            unknown_face_inframe[-1][fn] = 1
                 else:
                     face_names.append("Unknown")
                     unknown_face_encodings.append(face_encoding)
+                    unknown_face_inframe.append([0,0,0,0,0,0,0,0,0,0])
+                    unknown_face_pass.append([])
+                    if abs((face_locations[i][0] - face_locations[i][2]) * (face_locations[i][1] - face_locations[i][3])) > 3600:
+                        unknown_face_inframe[-1][fn] = 1
+
                 if i == main_face_idx:
                     if cv2.waitKey(1) & 0xFF == ord('s'):
                         reg_face_name = input("Please enter your name to register")
@@ -103,13 +124,21 @@ def main():
                         if face_names[i] != "Unknown":
                             face_names[i] = reg_face_name
                             known_face_names[known_best_match_index] = reg_face_name
-                        elif len(unknown_face_encodings) and unknown_best_match_distance < 0.3:
-                            unknown_face_encodings.pop(i)
-                            known_face_encodings.append(face_encodings[i])
+                        elif len(unknown_face_encodings) and unknown_best_match_distance < 0.35:
+                            known_face_encodings.append(unknown_face_encodings.pop(unknown_best_match_index))
                             known_face_names.append(reg_face_name)
+                            known_face_inframe.append(unknown_face_inframe.pop(unknown_best_match_index))
+                            known_face_pass.append(unknown_face_pass.pop(unknown_best_match_index))
+
+            fn = (fn + 1) % 10
+            for idx in range(len(known_face_encodings)):
+                if known_face_inframe[idx][fn] == 1 and sum(known_face_inframe[idx]) == 1:
+                    known_face_pass[idx].append(datetime.now())
+            for idx in range(len(unknown_face_encodings)):
+                if unknown_face_inframe[idx][fn] == 1 and sum(unknown_face_inframe[idx]) == 1:
+                    unknown_face_pass[idx].append(datetime.now())
 
         process_this_frame = not process_this_frame
-
         for i in range(len(face_names)):  # Display in video
             name = face_names[i]
             top, right, bottom, left = face_locations[i]
@@ -129,7 +158,39 @@ def main():
             cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
         cv2.imshow('Video', frame)
 
+        if datetime.now().hour != hour:
+            c_time = datetime.now()
+            k_ppl, uk_ppl, k_pass, uk_pass = 0, 0, 0, 0
+            for passing in known_face_pass:
+                k_pass += len(passing)
+                if len(passing):
+                    k_ppl += 1
+            for passing in unknown_face_pass:
+                uk_pass += len(passing)
+                if len(passing):
+                    uk_ppl += 1
+            with open("pass.csv", "a", newline='\n') as fp:
+                wr = csv.writer(fp, delimiter=',')
+                wr.writerow([c_time.year, c_time.month, c_time.day, c_time.hour, k_ppl, uk_ppl, k_pass, uk_pass])
+            known_face_pass = [[] for i in range(len(known_face_encodings))]
+            unknown_face_pass = [[] for i in range(len(unknown_face_encodings))]
+            hour = datetime.now().hour
+
         if cv2.waitKey(1) & 0xFF == ord('q') or datetime.now().hour == 19:  # q to quit
+            c_time = datetime.now()
+            k_ppl, uk_ppl, k_pass, uk_pass = 0, 0, 0, 0
+            for passing in known_face_pass:
+                k_pass += len(passing)
+                if len(passing):
+                    k_ppl += 1
+            for passing in unknown_face_pass:
+                uk_pass += len(passing)
+                if len(passing):
+                    uk_ppl += 1
+            with open("pass.csv", "a", newline='\n') as fp:
+                wr = csv.writer(fp, delimiter=',')
+                wr.writerow([c_time.year, c_time.month, c_time.day, c_time.hour, k_ppl, uk_ppl, k_pass, uk_pass])
+
             with open(FACE_DATA + "face_encodings.csv", 'w', newline='') as f:
                 fwr = csv.writer(f, delimiter=',')
                 fwr.writerows(np.concatenate((np.array(known_face_names).reshape(len(known_face_names), 1), known_face_encodings), axis=1))
@@ -138,9 +199,8 @@ def main():
     video_capture.release()  # release webcam handling
     cv2.destroyAllWindows()
 
-
-schedule.every().day.at("08:00").do(main)
 '''
+schedule.every().day.at("08:00").do(main)
 while True:
     schedule.run_pending()
     time.sleep(1)
