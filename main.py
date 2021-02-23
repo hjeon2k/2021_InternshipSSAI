@@ -8,12 +8,15 @@ import time
 import csv
 from datetime import datetime
 
+from snu_visitor_bot import *
+from multiprocessing import Process
+
 #   fast1. Process each video frame at 1/5 resolution (though still display it at full resolution)
 #   fast2. Only detect faces in every other frame of video.
 
 video_capture = cv2.VideoCapture(0)  # get video from default webcam
-
 FACE_DATA = "face_data/"
+
 def include_faces():
     known_face_encodings, known_face_names = [], []
     for filename in os.listdir(FACE_DATA):
@@ -54,7 +57,7 @@ def get_ear(eye):
     return ear
 
 
-def main():
+def main_cam():
     process_this_frame = True
     face_locations, face_names = [], []
     known_face_encodings, known_face_names = include_faces()
@@ -62,9 +65,6 @@ def main():
     unknown_face_encodings, unknown_face_pass, unknown_face_inframe = [], [], []
     fn = 0
     hour = datetime.now().hour
-    with open("pass.csv", "a", newline='\n') as fp:
-        wr = csv.writer(fp, delimiter=',')
-        wr.writerow(["year", "month", "day", "hour", "known_ppl", "unknown_ppl", "known_pass", "unknown_pass"])
     while True:
         ret, frame = video_capture.read()
         small_frame = cv2.resize(frame, (0, 0), fx=0.2, fy=0.2)  #   fast1
@@ -199,10 +199,24 @@ def main():
     video_capture.release()  # release webcam handling
     cv2.destroyAllWindows()
 
-'''
-schedule.every().day.at("08:00").do(main)
-while True:
-    schedule.run_pending()
-    time.sleep(1)
-'''
-main()
+
+if not os.path.isfile("pass.csv"):
+    with open("pass.csv", "a", newline='\n') as fp:
+        wr = csv.writer(fp, delimiter=',')
+        wr.writerow(["year", "month", "day", "hour", "known_ppl", "unknown_ppl", "known_pass", "unknown_pass"])
+
+#schedule.every().day.at("08:00").do(main_cam)
+def main_cam_daily():
+    main_cam()
+    #while True:
+        #schedule.run_pending()
+        #time.sleep(1)
+
+
+if __name__ == '__main__':
+    p1 = Process(target=main_cam_daily) #함수 1을 위한 프로세스
+    p2 = Process(target=main_bot)
+    p1.start()
+    p2.start()
+    p1.join()
+    p2.join()
