@@ -1,7 +1,7 @@
 from telegram.ext import Updater, MessageHandler, Filters, CommandHandler  # import modules
 import os
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta, date
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -14,7 +14,7 @@ photo_name = 0
 
 
 # message reply function
-def get_message(update, context) :
+def get_message(update, context):
     global photo_name
     message = update.message.text
     if len(message.split('-'))==2 and len(message.split('-')[0].split('.'))==4 and len(message.split('-')[1].split('.'))==4:
@@ -47,17 +47,45 @@ def get_message(update, context) :
         update.message.reply_text("Face registered as " + message + "\nIt will be applied by tomorrow")
         photo_name = 0
     else:
-        update.message.reply_text("You can view the statics when you enter\nYYYY.MM.DD.HH-YYYY.MM.DD.HH\nPlease match the format")
+        update.message.reply_text("You can view the statics when you enter\nYYYY.MM.DD.HH-YYYY.MM.DD.HH\nPlease match the format above")
 
 
 
 # help reply function
-def help_command(update, context) :
-    update.message.reply_text("You can view the statics when you enter\bYYYY.MM.DD.HH-YYYY.MM.DD.HH\nPlease match the format")
+def help_command(update, context):
+    update.message.reply_text("You can view the statics when you enter\bYYYY.MM.DD.HH-YYYY.MM.DD.HH\nPlease match the format above")
 
+def help_command(update, context):
+    data = pd.read_csv("pass.csv")
+    now = datetime.now()
+    wd, wk = np.zeros((4, 7)), []
+    for i in range(7):
+        tdate = now - timedelta(days=6-i)
+        wk.append('{year}.{month}.{day}'.format(year=tdate.year, month=tdate.month, day=tdate.day))
+        data_filter = lambda data: date(year=data['year'], month=data['month'], day=data['day']) == date(year=tdate.year, month=tdate.month, day=tdate.day)
+        filtered = data[data.apply(data_filter, axis=1)]
+        if filtered.size:
+            wd[0][i], wd[1][i], wd[2][i], wd[3][i]= filtered['known_ppl'].sum(), filtered['unknown_ppl'].sum(), filtered['known_pass'].sum(), filtered['unknown_pass'].sum()
+
+    plt.title('Weekly Visit Statics')
+    cmap = plt.get_cmap("tab20c")
+    colors = cmap(np.array([3, 7, 1, 5]))
+    wd_0, = plt.plot(wk, wd[0], marker='.', alpha=1.0, label='Registered people', color=colors[0])
+    wd_1, = plt.plot(wk, wd[1], marker='.', alpha=1.0, label='Strangers', color=colors[1])
+    wd_2, = plt.plot(wk, wd[2], marker='s', markersize=3, linestyle='--', alpha=0.8, label='Total visit by\nregistered people', color=colors[2])
+    wd_3, = plt.plot(wk, wd[3], marker='s', markersize=3, linestyle='--', alpha=0.8, label='Total visit by\nstrangers', color=colors[3])
+    #plt.legend(ncol=2)
+    visitor_legend = plt.legend(handles=[wd_0, wd_1], loc=4)
+    pass_legend = plt.legend(handles=[wd_2, wd_3], loc=1)
+    plt.gca().add_artist(visitor_legend)
+    plt.gca().add_artist(pass_legend)
+    plt.xticks(rotation=30)
+    plt.savefig('tmp_plot.png', dpi=300)
+    context.bot.send_photo(chat_id=update.effective_chat.id, photo=open('tmp_plot.png', 'rb'))
+    os.remove('tmp_plot.png')
 
 # photo reply function
-def get_photo(update, context) :
+def get_photo(update, context):
     global photo_name
     file_path = photo_dir + 'tmp_people.png'
     photo_id = update.message.photo[-1].file_id
@@ -75,6 +103,9 @@ def main_bot():
 
     help_handler = CommandHandler('help', help_command)
     updater.dispatcher.add_handler(help_handler)
+
+    weekly_handler = CommandHandler('weekly', help_command)
+    updater.dispatcher.add_handler(weekly_handler)
 
     photo_handler = MessageHandler(Filters.photo, get_photo)
     updater.dispatcher.add_handler(photo_handler)

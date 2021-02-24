@@ -214,7 +214,7 @@ def main_cam_daily():
 
 
 if __name__ == '__main__':
-    p1 = Process(target=main_cam_daily) #함수 1을 위한 프로세스
+    p1 = Process(target=main_cam_daily)
     p2 = Process(target=main_bot)
     p1.start()
     p2.start()
