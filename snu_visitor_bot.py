@@ -3,8 +3,9 @@ import os
 import pandas as pd
 from datetime import datetime, timedelta, date
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
-
+import math
 
 my_token = '1689881196:AAHtrVDGWg-huAYP9NCRzHUDAzIHTVMewqg'
 photo_dir = 'C:/Users/hjeon/2021_InternshipSSAI/face_data/'
@@ -25,8 +26,7 @@ def get_message(update, context):
         filtered = data[data.apply(data_filter, axis=1)]
         if filtered.size:
             t_kp, t_ukp, t_kpa, t_ukpa = filtered['known_ppl'].sum(), filtered['unknown_ppl'].sum(), filtered['known_pass'].sum(), filtered['unknown_pass'].sum()
-            update.message.reply_text("Known People :"+str(t_kp)+"\n" + "Unknown People : "+str(t_ukp)+"\n" +
-                                      "Pass of known people : "+str(t_kpa)+"\n" + "Pass of unknown people : "+str(t_ukpa))
+            update.message.reply_text("Total Visitors :"+str(t_kp + t_ukp)+"\n" + "Total number of Visits : "+str(t_kpa + t_ukpa))
             fig, ax = plt.subplots()
             cmap = plt.get_cmap("tab20c")
             pass_labels, pass_chart, pass_colors = ['Total visit by\nRegistered People', 'Total visit by\nStrangers'], np.array([t_kpa, t_ukpa]), cmap(np.array([1, 5]))
@@ -67,19 +67,22 @@ def help_command(update, context):
         if filtered.size:
             wd[0][i], wd[1][i], wd[2][i], wd[3][i]= filtered['known_ppl'].sum(), filtered['unknown_ppl'].sum(), filtered['known_pass'].sum(), filtered['unknown_pass'].sum()
 
-    plt.title('Weekly Visit Statics')
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    plt.suptitle('Weekly Visit Statics')
     cmap = plt.get_cmap("tab20c")
-    colors = cmap(np.array([3, 7, 1, 5]))
-    wd_0, = plt.plot(wk, wd[0], marker='.', alpha=1.0, label='Registered people', color=colors[0])
-    wd_1, = plt.plot(wk, wd[1], marker='.', alpha=1.0, label='Strangers', color=colors[1])
-    wd_2, = plt.plot(wk, wd[2], marker='s', markersize=3, linestyle='--', alpha=0.8, label='Total visit by\nregistered people', color=colors[2])
-    wd_3, = plt.plot(wk, wd[3], marker='s', markersize=3, linestyle='--', alpha=0.8, label='Total visit by\nstrangers', color=colors[3])
-    #plt.legend(ncol=2)
-    visitor_legend = plt.legend(handles=[wd_0, wd_1], loc=4)
-    pass_legend = plt.legend(handles=[wd_2, wd_3], loc=1)
-    plt.gca().add_artist(visitor_legend)
-    plt.gca().add_artist(pass_legend)
-    plt.xticks(rotation=30)
+    colors = cmap(np.array([2, 5, 1, 5]))
+    wd_kp, = ax1.plot(wk, wd[0], marker='.', label='Registered people', color=colors[0])
+    wd_ukp, = ax1.plot(wk, wd[1], marker='.', label='Strangers', color=colors[1])
+    wd_pt, = ax1.plot(wk, wd[0]+wd[1], marker='.', label='Total visitors', color='grey')
+    wd_kpa, = ax2.plot(wk, wd[2], marker='s', markersize=3, linestyle='--', label='Total visit by\nregistered people', color=colors[2])
+    wd_ukpa, = ax2.plot(wk, wd[3], marker='s', markersize=3, linestyle='--', label='Total visit by\nstrangers', color=colors[3])
+    wd_pat, = ax2.plot(wk, wd[2]+wd[3], marker='s', markersize=3, linestyle='--', label='Total visits', color='grey')
+    ax1.legend(handles=[wd_kp, wd_ukp, wd_pt], loc=1)
+    ax1.tick_params(labelrotation=30)
+    ax1.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax2.legend(handles=[wd_kpa, wd_ukpa, wd_pat], loc=1)
+    ax2.tick_params(labelrotation=30)
+    ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
     plt.savefig('tmp_plot.png', dpi=300)
     context.bot.send_photo(chat_id=update.effective_chat.id, photo=open('tmp_plot.png', 'rb'))
     os.remove('tmp_plot.png')
