@@ -7,7 +7,7 @@ from matplotlib.ticker import MaxNLocator
 import numpy as np
 import math
 
-my_token = '1689881196:AAHtrVDGWg-huAYP9NCRzHUDAzIHTVMewqg'
+my_token = '*********************************************'
 photo_dir = 'C:/Users/hjeon/2021_InternshipSSAI/face_data/'
 photo_dir = './face_data/'
 photo_name = 0
